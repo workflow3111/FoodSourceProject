@@ -1,0 +1,268 @@
+// FoodSource MVP schema.
+// Shortlist and notes are scoped by workspaceKey so authentication can be added later.
+// dataType separates cited supplier records from fabricated demonstration rows.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SupplierType {
+  MANUFACTURER
+  DISTRIBUTOR
+  FARM
+  IMPORTER
+  PACKAGING
+  WHOLESALER
+  OTHER
+}
+
+enum DataType {
+  REAL
+  DEMO
+}
+
+enum VerificationStatus {
+  VERIFIED
+  PARTIALLY_VERIFIED
+  UNVERIFIED
+  EXPIRED
+}
+
+enum SourceType {
+  OFFICIAL_WEBSITE
+  OFFICIAL_CATALOG
+  PUBLIC_REGISTRY
+  MANUAL
+  DEMO
+}
+
+enum ContactType {
+  PHONE
+  EMAIL
+  WEBSITE_FORM
+  WEBSITE
+  OTHER
+}
+
+enum ContactStatus {
+  NOT_CONTACTED
+  CONTACTED
+  AWAITING_RESPONSE
+  RESPONDED
+  NEGOTIATING
+  QUALIFIED
+  REJECTED
+}
+
+enum ContactMethod {
+  EMAIL
+  PHONE
+  WEBSITE
+  OTHER
+}
+
+enum CertificateStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+  SUSPENDED
+  REVOKED
+  UNKNOWN
+}
+
+// Certificate checks are separate from Supplier.verificationStatus.
+enum CertificateVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// What kind of goods a product is. Independent of Category.
+enum ProductType {
+  INGREDIENTS
+  FINISHED_PRODUCTS
+  PACKAGING
+  OTHER_FOOD_RELATED_GOODS
+}
+
+model Supplier {
+  id                 String             @id @default(uuid()) @db.Uuid
+  name               String
+  slug               String             @unique
+  description        String?
+  supplierType       SupplierType       @default(OTHER)
+  city               String?
+  region             String?
+  country            String             @default("Россия")
+  address            String?
+  website            String?
+  sourceUrl          String?
+  dataType           DataType           @default(DEMO)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  lastVerifiedAt     DateTime?
+  logoUrl            String?
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  products       SupplierProduct[]
+  contacts       SupplierContact[]
+  certifications Certification[]
+  sources        SupplierSource[]
+  shortlists     Shortlist[]
+  notes          SupplierNote[]
+
+  @@index([name])
+  @@index([city, region])
+  @@index([isActive, city])
+  @@index([isActive, region])
+  @@index([dataType, verificationStatus])
+  @@index([supplierType])
+}
+
+model Category {
+  id          String            @id @default(uuid()) @db.Uuid
+  nameRu      String            @unique
+  nameEn      String
+  slug        String            @unique
+  description String?
+  sortOrder   Int               @default(0)
+  products    SupplierProduct[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([sortOrder])
+}
+
+model SupplierProduct {
+  id                   String   @id @default(uuid()) @db.Uuid
+  supplierId           String   @db.Uuid
+  categoryId           String   @db.Uuid
+  name                 String
+  description          String?
+  sku                  String?
+  estimatedPrice       Decimal? @db.Decimal(12, 2)
+  currency             String   @default("RUB")
+  minimumOrderQuantity Decimal? @db.Decimal(12, 3)
+  unit                 String?
+  packageDescription   String?
+  priceUpdatedAt       DateTime?
+  deliveryNotes        String?
+  imageUrl             String?
+  isAvailable          Boolean?
+  productType          ProductType
+  dataType             DataType @default(DEMO)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId])
+  @@index([categoryId])
+  @@index([name])
+  @@index([estimatedPrice])
+  @@index([minimumOrderQuantity])
+  @@index([dataType])
+  @@index([productType])
+  @@index([supplierId, productType])
+}
+
+model SupplierContact {
+  id         String      @id @default(uuid()) @db.Uuid
+  supplierId String      @db.Uuid
+  type       ContactType
+  label      String?
+  value      String
+  isPublic   Boolean     @default(true)
+  sourceUrl  String?
+  createdAt  DateTime    @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, type])
+}
+
+model Certification {
+  id                 String                        @id @default(uuid()) @db.Uuid
+  supplierId         String                        @db.Uuid
+  name               String
+  certificateNumber  String?
+  documentUrl        String?
+  issuer             String?
+  issuedAt           DateTime?
+  expiresAt          DateTime?
+  // Recorded status. SUSPENDED and REVOKED are authoritative.
+  // VALID, EXPIRING_SOON, EXPIRED and UNKNOWN are recalculated from expiresAt on read.
+  certificateStatus  CertificateStatus             @default(UNKNOWN)
+  verificationStatus CertificateVerificationStatus @default(UNVERIFIED)
+  verifiedAt         DateTime?
+  verifiedBy         String?
+  verificationNotes  String?
+  sourceUrl          String?
+  isDemo             Boolean                       @default(false)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId, certificateStatus])
+  @@index([supplierId, verificationStatus])
+  @@index([expiresAt])
+  @@index([isDemo])
+}
+
+model SupplierSource {
+  id         String     @id @default(uuid()) @db.Uuid
+  supplierId String     @db.Uuid
+  sourceType SourceType
+  url        String
+  title      String?
+  evidence   String?
+  checkedAt  DateTime?
+  isPrimary  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, url])
+  @@index([supplierId, sourceType])
+}
+
+model Shortlist {
+  id              String         @id @default(uuid()) @db.Uuid
+  workspaceKey    String         @default("demo-workspace")
+  supplierId      String         @db.Uuid
+  contactStatus   ContactStatus  @default(NOT_CONTACTED)
+  lastContactOn   DateTime?      @db.Date
+  nextFollowUpOn  DateTime?      @db.Date
+  contactPerson   String?
+  contactMethod   ContactMethod?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceKey, supplierId])
+  @@index([workspaceKey, contactStatus])
+  @@index([workspaceKey, nextFollowUpOn])
+}
+
+model SupplierNote {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceKey String   @default("demo-workspace")
+  supplierId   String   @db.Uuid
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceKey, supplierId])
+}
