@@ -13,9 +13,6 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  outputFileTracingIncludes: {
-    "/*": ["./certs/ca.pem"],
-  },
 };
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
